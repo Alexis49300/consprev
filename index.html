@@ -287,8 +287,18 @@ tr:hover td{background:#f7f6f3;cursor:pointer}
       </div>
     </div>
 
-    <div class="view" id="view-pipeline" style="height:calc(100vh - 120px)">
-      <div class="pipeline" id="pipeline-board"></div>
+    <div class="view" id="view-pipeline" style="display:flex;flex-direction:column;height:calc(100vh - 52px)">
+      <div style="padding:8px 18px;background:var(--surface);border-bottom:0.5px solid var(--border);display:flex;align-items:center;gap:8px;flex-shrink:0;flex-wrap:wrap">
+        <input type="text" id="pipe-search" placeholder="Rechercher…" oninput="renderPipeline()" style="font-family:inherit;font-size:12px;border:0.5px solid rgba(0,0,0,0.18);border-radius:var(--r);padding:5px 9px;background:#f5f4f1;color:var(--text);width:160px">
+        <select id="pipe-client" onchange="renderPipeline()" style="font-family:inherit;font-size:12px;border:0.5px solid rgba(0,0,0,0.18);border-radius:var(--r);padding:5px 8px;background:#fff;color:var(--text)">
+          <option value="">Tous les clients</option>
+        </select>
+        <select id="pipe-resp" onchange="renderPipeline()" style="font-family:inherit;font-size:12px;border:0.5px solid rgba(0,0,0,0.18);border-radius:var(--r);padding:5px 8px;background:#fff;color:var(--text)">
+          <option value="">Tous les responsables</option>
+        </select>
+        <span id="pipe-total" style="font-size:11px;color:var(--text2);margin-left:4px"></span>
+      </div>
+      <div class="pipeline" id="pipeline-board" style="flex:1;overflow-x:auto;overflow-y:hidden;padding:14px 18px 14px"></div>
     </div>
 
     <div class="view" id="view-list">
@@ -683,25 +693,64 @@ function renderCharts(){
 }
 
 function renderPipeline(){
-  const d=getFiltered();
+  // Filtres propres au pipeline — indépendants de la vue liste
+  const sq=($('pipe-search')?.value||'').toLowerCase();
+  const fc=$('pipe-client')?.value||'';
+  const fr=$('pipe-resp')?.value||'';
+
+  // Tous les dossiers, filtrés uniquement par les contrôles du pipeline
+  let d=dossiers.filter(r=>{
+    const ms=!sq||(r.client+r.formation+r.resp+(r.appId?appName(r.appId):'')).toLowerCase().includes(sq);
+    return ms&&(!fc||r.client===fc)&&(!fr||r.resp===fr);
+  });
+
+  // Mettre à jour les selects client + responsable
+  const pcl=$('pipe-client');
+  if(pcl){
+    const curC=pcl.value;
+    const clients=[...new Set(dossiers.map(r=>r.client))].filter(Boolean).sort();
+    pcl.innerHTML='<option value="">Tous les clients</option>'+clients.map(c=>`<option value="${c}"${c===curC?' selected':''}>${c}</option>`).join('');
+  }
+  const prs=$('pipe-resp');
+  if(prs){
+    const curR=prs.value;
+    const resps=[...new Set(dossiers.map(r=>r.resp))].filter(Boolean).sort();
+    prs.innerHTML='<option value="">Tous les responsables</option>'+resps.map(r=>`<option value="${r}"${r===curR?' selected':''}>${r}</option>`).join('');
+  }
+
+  // Compteur total
+  const pt=$('pipe-total');
+  if(pt) pt.textContent=d.length+' dossier'+(d.length>1?'s':'');
+
   $('pipeline-board').innerHTML=ETAPES.map(e=>{
     const cards=d.filter(r=>r.etape===e.id);
     return`<div class="pipe-col">
-      <div class="pipe-hd"><span>${e.icon} ${e.label}</span><span class="pipe-cnt">${cards.length}</span></div>
-      <div style="overflow-y:auto;flex:1">
+      <div class="pipe-hd">
+        <span>${e.icon} ${e.label}</span>
+        <span class="pipe-cnt" style="background:${cards.length>0?e.bg:'#f0ede8'};color:${cards.length>0?e.fg:'#888'}">${cards.length}</span>
+      </div>
+      <div style="overflow-y:auto;flex:1;padding-bottom:8px">
       ${cards.map(r=>{
         const ci=checksInfo(r,e.id);
+        const od=isOD(r.fin);
+        const app=r.appId?apporteurs.find(a=>a.id===r.appId):null;
         return`<div class="kcard" onclick="openPanel('${r.id}')">
-          <div class="kcard-client">${r.client}</div>
+          <div style="display:flex;align-items:center;justify-content:space-between;margin-bottom:2px">
+            <div class="kcard-client">${r.client}</div>
+            ${od?`<span style="font-size:9px;color:var(--red-d);font-weight:500">⚠ ${fmtD(r.fin)}</span>`:''}
+          </div>
           <div class="kcard-title">${r.formation}</div>
           ${ci.total>0?`<div class="kcard-checks">${e.checks.map((_,i)=>`<div class="cdot ${(parseChecks(r.checks[e.id]||''))[i]?'done':'todo'}"></div>`).join('')}<span style="font-size:10px;color:var(--text2);margin-left:2px">${ci.done}/${ci.total}</span></div>`:''}
-          <div style="display:flex;align-items:center;justify-content:space-between;gap:4px;flex-wrap:wrap;margin-top:4px">
+          <div style="display:flex;align-items:center;justify-content:space-between;gap:4px;margin-top:5px;flex-wrap:wrap">
             <span style="background:${e.bg};color:${e.fg};font-size:10px;padding:1px 6px;border-radius:10px;font-weight:500">${r.finmode}</span>
-            ${r.resp?avHtml(r.resp,16):''}
+            <div style="display:flex;gap:3px;align-items:center">
+              ${r.resp?avHtml(r.resp,16):''}
+              ${app?`<span style="font-size:9px;color:var(--text2)">${app.nom.split(' ')[0]}</span>`:''}
+            </div>
           </div>
           <div class="kprog"><div class="kprog-fill" style="width:${dossierProg(r)}%;background:${e.color}"></div></div>
         </div>`;
-      }).join('')||`<div style="font-size:11px;color:var(--text3);padding:8px 2px">Aucun dossier</div>`}
+      }).join('')||`<div style="font-size:11px;color:var(--text3);padding:10px 4px;text-align:center">—</div>`}
       </div>
     </div>`;
   }).join('');
