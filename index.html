@@ -837,7 +837,7 @@ function getFiltered(){
 // PANEL
 // ══════════════════════════════════════════
 function openPanel(id){
-  panelId=id;const r=dossiers.find(d=>d.id===id);
+  panelId=id;const r=dossiers.find(d=>String(d.id).trim()===String(id).trim());
   $('panel-title').textContent=r.client+' — '+r.formation;
   const app=r.appId?apporteurs.find(a=>a.id===r.appId):null;
   $('panel-meta').innerHTML=`
@@ -851,10 +851,10 @@ function openPanel(id){
   $('panelBg').classList.add('open');
 }
 function closePanel(){$('panelBg').classList.remove('open');panelId=null;}
-function editFromPanel(){if(panelId){closePanel();openForm(panelId);}}
+function editFromPanel(){if(panelId!=null){closePanel();openForm(panelId);}}
 
 function renderPanelBody(){
-  const r=dossiers.find(d=>d.id===panelId);if(!r)return;
+  const r=dossiers.find(d=>String(d.id).trim()===String(panelId).trim());if(!r)return;
   const curIdx=getEI(r.etape);
   const ck='<svg viewBox="0 0 10 10" style="width:9px;height:9px"><polyline points="2,5 4.5,8 8.5,2" stroke="white" stroke-width="2" fill="none" stroke-linecap="round" stroke-linejoin="round"/></svg>';
   let html='<div>';
@@ -916,7 +916,7 @@ function renderComments(r){
 }
 
 async function toggleCheck(dosId,etapeId,ci){
-  const r=dossiers.find(d=>d.id===dosId);
+  const r=dossiers.find(d=>String(d.id)===String(dosId));
   const e=ETAPES.find(x=>x.id===etapeId);
   const vals=parseChecks(r.checks[etapeId]||'');
   while(vals.length<e.checks.length)vals.push(false);
@@ -929,19 +929,19 @@ async function toggleCheck(dosId,etapeId,ci){
 }
 
 async function advanceEtape(id){
-  const r=dossiers.find(d=>d.id===id);
+  const r=dossiers.find(d=>String(d.id)===String(id));
   const i=getEI(r.etape);
   if(i<ETAPES.length-1){r.etape=ETAPES[i+1].id;r.updatedAt=new Date().toISOString();lsSet('formacrm_dossiers',dossiers);renderPanelBody();renderAll();await pushDossier(r);}
 }
 async function regressEtape(id){
-  const r=dossiers.find(d=>d.id===id);
+  const r=dossiers.find(d=>String(d.id)===String(id));
   const i=getEI(r.etape);
   if(i>0){r.etape=ETAPES[i-1].id;r.updatedAt=new Date().toISOString();lsSet('formacrm_dossiers',dossiers);renderPanelBody();renderAll();await pushDossier(r);}
 }
 
 async function postComment(id){
   const inp=$('new-cmt');const text=inp.value.trim();if(!text)return;
-  const r=dossiers.find(d=>d.id===id);
+  const r=dossiers.find(d=>String(d.id)===String(id));
   const comments=JSON.parse(r.comments||'[]');
   comments.push({author:'Vous',date:TODAY,text});
   r.comments=JSON.stringify(comments);
@@ -975,7 +975,7 @@ function closeForm(){$('formModal').classList.remove('open');}
 async function saveDossier(){
   const client=$('fi-client').value.trim(),formation=$('fi-form').value.trim();
   if(!client||!formation){alert('Client et formation requis.');return;}
-  const base=editId?dossiers.find(d=>d.id===editId):{};
+  const base=editId?dossiers.find(d=>String(d.id)===String(editId)):{};
   const obj={
     id:editId||(++nextId+''),client,orga:$('fi-orga').value.trim(),
     formation,type:$('fi-type').value,stag:parseInt($('fi-stag').value)||0,
@@ -992,7 +992,7 @@ async function saveDossier(){
     createdAt:base.createdAt||new Date().toISOString(),
     updatedAt:new Date().toISOString(),
   };
-  if(editId){const i=dossiers.findIndex(d=>d.id===editId);dossiers[i]=obj;}
+  if(editId){const i=dossiers.findIndex(d=>String(d.id)===String(editId));if(i!==-1)dossiers[i]=obj;else dossiers.push(obj);}
   else dossiers.push(obj);
   lsSet('formacrm_dossiers',dossiers);
   closeForm();renderAll();
@@ -1002,7 +1002,7 @@ async function saveDossier(){
 async function deleteDossier(){
   if(!editId)return;
   if(confirm('Supprimer ce dossier définitivement ?')){
-    dossiers=dossiers.filter(d=>d.id!==editId);
+    dossiers=dossiers.filter(d=>String(d.id)!==String(editId));
     lsSet('formacrm_dossiers',dossiers);
     closeForm();closePanel();renderAll();
     await pushDeleteDossier(editId);
@@ -1013,7 +1013,7 @@ async function deleteDossier(){
 // FORM APPORTEUR
 // ══════════════════════════════════════════
 function openAppForm(id=null){
-  editAppId=id;const a=id?apporteurs.find(x=>x.id===id):null;
+  editAppId=id;const a=id?apporteurs.find(x=>String(x.id)===String(id)):null;
   $('app-form-title').textContent=a?"Modifier l'apporteur":'Nouvel apporteur';
   $('ap-nom').value=a?a.nom:'';$('ap-soc').value=a?a.soc:'';
   $('ap-email').value=a?a.email:'';$('ap-tel').value=a?a.tel:'';
@@ -1025,21 +1025,36 @@ function closeAppForm(){$('appModal').classList.remove('open');}
 
 async function saveApporteur(){
   const nom=$('ap-nom').value.trim();if(!nom){alert('Nom requis.');return;}
-  const obj={id:editAppId||(++nextId+''),nom,soc:$('ap-soc').value.trim(),
-    email:$('ap-email').value.trim(),tel:$('ap-tel').value.trim(),
-    taux:parseFloat($('ap-taux').value)||0,notes:$('ap-notes').value.trim()};
-  if(editAppId){const i=apporteurs.findIndex(a=>a.id===editAppId);apporteurs[i]=obj;}
-  else apporteurs.push(obj);
+  const base=editAppId?apporteurs.find(a=>String(a.id)===String(editAppId)):null;
+  const newId=editAppId||('app-'+Date.now()+'-'+Math.random().toString(36).slice(2,7));
+  const obj={
+    id:newId,
+    nom,
+    soc:$('ap-soc').value.trim(),
+    email:$('ap-email').value.trim(),
+    tel:$('ap-tel').value.trim(),
+    taux:parseFloat($('ap-taux').value)||0,
+    notes:$('ap-notes').value.trim(),
+    createdAt:base?.createdAt||new Date().toISOString(),
+  };
+  if(editAppId){
+    const i=apporteurs.findIndex(a=>String(a.id)===String(editAppId));
+    if(i!==-1)apporteurs[i]=obj; else apporteurs.push(obj);
+  } else {
+    apporteurs.push(obj);
+  }
   lsSet('formacrm_apporteurs',apporteurs);
   closeAppForm();renderAll();
-  await pushApporteur(obj);
+  const res=await pushApporteur(obj);
+  if(res?.ok) showSyncStatus('✓ Apporteur sauvegardé dans Sheets','#3B6D11');
+  else showSyncStatus('⚠ Erreur sauvegarde Sheets','#E24B4A');
 }
 
 async function deleteApporteur(){
   if(!editAppId)return;
   if(confirm('Supprimer cet apporteur ?')){
-    apporteurs=apporteurs.filter(a=>a.id!==editAppId);
-    dossiers.forEach(d=>{if(d.appId===editAppId)d.appId='';});
+    apporteurs=apporteurs.filter(a=>String(a.id)!==String(editAppId));
+    dossiers.forEach(d=>{if(String(d.appId)===String(editAppId))d.appId='';});
     lsSet('formacrm_apporteurs',apporteurs);lsSet('formacrm_dossiers',dossiers);
     closeAppForm();renderAll();
     await pushDeleteApporteur(editAppId);
