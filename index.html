@@ -505,7 +505,7 @@ const API_URL = 'https://script.google.com/macros/s/AKfycbwh3Zw-nrugVK3SKGVoMWjx
 let dossiers = lsGet('formacrm_dossiers', []);
 let apporteurs = lsGet('formacrm_apporteurs', []);
 let pendingPush = lsGet('formacrm_pending', []); // modifications en attente de sync
-let nextId=1000,panelId=null,editId=null,editAppId=null;
+let panelId=null,editId=null,editAppId=null;
 let isSyncing=false;
 
 // ══════════════════════════════════════════
@@ -516,17 +516,15 @@ async function apiCall(params){
   try{
     let res;
     if(params.method==='POST'){
-      // Apps Script exige no-cors ou text/plain pour éviter preflight CORS
-      res=await fetch(API_URL,{
-        method:'POST',
-        body:JSON.stringify(params.body),
-        headers:{'Content-Type':'text/plain'},
-      });
+      // Apps Script CORS : encoder l'action en GET pour éviter le preflight
+      // On encode le body en paramètre GET (contournement CORS Apps Script)
+      const encoded = encodeURIComponent(JSON.stringify(params.body));
+      res = await fetch(`${API_URL}?payload=${encoded}`,{cache:'no-store'});
     }else{
       const qs=new URLSearchParams(params.query).toString();
       res=await fetch(`${API_URL}?${qs}`,{cache:'no-store'});
     }
-    // Lire le texte brut d'abord pour déboguer les réponses non-JSON
+    // Lire le texte brut d'abord
     const text=await res.text();
     let data;
     try{ data=JSON.parse(text); }
@@ -1083,7 +1081,7 @@ async function saveDossier(){
   if(!client||!formation){alert('Client et formation requis.');return;}
   const base=editId?dossiers.find(d=>String(d.id)===String(editId)):{};
   const obj={
-    id:editId||(++nextId+''),client,orga:$('fi-orga').value.trim(),
+    id:editId||('d-'+Date.now()+'-'+Math.random().toString(36).slice(2,6)),client,orga:$('fi-orga').value.trim(),
     formation,type:$('fi-type').value,stag:parseInt($('fi-stag').value)||0,
     resp:$('fi-resp').value.trim(),appId:$('fi-app').value||'',comm:parseFloat($('fi-comm').value)||0,
     etape:base.etape||'creation',deb:$('fi-deb').value,fin:$('fi-fin').value,
