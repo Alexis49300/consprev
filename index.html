@@ -734,7 +734,7 @@ function renderPipeline(){
         const ci=checksInfo(r,e.id);
         const od=isOD(r.fin);
         const app=r.appId?apporteurs.find(a=>a.id===r.appId):null;
-        return`<div class="kcard" onclick="openPanel('${r.id}')">
+        return`<div class="kcard" data-dos-id="${r.id}" onclick="openPanelFromRow(this)">
           <div style="display:flex;align-items:center;justify-content:space-between;margin-bottom:2px">
             <div class="kcard-client">${r.client}</div>
             ${od?`<span style="font-size:9px;color:var(--red-d);font-weight:500">⚠ ${fmtD(r.fin)}</span>`:''}
@@ -758,10 +758,11 @@ function renderPipeline(){
 
 function renderTable(){
   const d=getFiltered();
-  $('tbody').innerHTML=d.map(r=>{
+  $('tbody').innerHTML=d.map((r,idx)=>{
     const e=ETAPES.find(x=>x.id===r.etape)||ETAPES[0];
     const ci=checksInfo(r,r.etape);const od=isOD(r.fin);
-    return`<tr onclick="openPanel('${r.id}')">
+    // Stocke l'ID en data-attribute pour éviter l'injection dans onclick
+    return`<tr data-dos-id="${r.id}" onclick="openPanelFromRow(this)">
       <td style="font-weight:500">${r.client}</td><td>${r.formation}</td>
       <td>${bdg(e.bg,e.fg,e.label)}</td>
       <td><span style="font-size:11px;color:${ci.done===ci.total&&ci.total>0?'#3B6D11':ci.done>0?'#BA7517':'#aaa'};font-weight:500">${ci.done}/${ci.total}</span></td>
@@ -775,11 +776,12 @@ function renderTable(){
 }
 
 function renderApporteurs(){
-  $('app-grid').innerHTML=apporteurs.map(a=>{
-    const dos=dossiers.filter(r=>r.appId===a.id);
+  // Utilise data-index pour éviter les problèmes d'ID dans le onclick HTML
+  $('app-grid').innerHTML=apporteurs.map((a,idx)=>{
+    const dos=dossiers.filter(r=>String(r.appId)===String(a.id));
     const ca=dos.reduce((s,r)=>s+(Number(r.budget)||0),0);
     const comm=dos.reduce((s,r)=>s+(Number(r.budget)||0)*(Number(r.comm)||Number(a.taux)||0)/100,0);
-    return`<div class="app-card" onclick="openAppForm('${a.id}')">
+    return`<div class="app-card" data-app-index="${idx}" onclick="openAppFormByIndex(this)">
       <div style="display:flex;align-items:center;gap:10px;margin-bottom:10px">
         ${avHtml(a.nom,40)}
         <div><div style="font-size:13px;font-weight:500">${a.nom}</div><div style="font-size:11px;color:var(--text2)">${a.soc||a.email||'—'}</div></div>
@@ -792,6 +794,16 @@ function renderApporteurs(){
       <div class="app-dos">${dos.length?dos.slice(0,3).map(r=>`<div style="padding:2px 0;display:flex;align-items:center;gap:5px"><div style="width:6px;height:6px;border-radius:50%;background:${(ETAPES.find(e=>e.id===r.etape)||ETAPES[0]).color};flex-shrink:0"></div>${r.client} — ${r.formation.slice(0,24)}${r.formation.length>24?'…':''}</div>`).join('')+(dos.length>3?`<div style="font-size:10px;margin-top:2px">+${dos.length-3} autres</div>`:''): 'Aucun dossier attribué'}</div>
     </div>`;
   }).join('')||`<div style="text-align:center;color:var(--text2);padding:40px;font-size:13px">Aucun apporteur.<br><button class="btn-p btn-sm" style="margin-top:12px" onclick="openAppForm()">+ Ajouter</button></div>`;
+}
+
+function openAppFormByIndex(el){
+  // Remonte jusqu'à la carte si on a cliqué un enfant
+  const card=el.closest('[data-app-index]');
+  if(!card)return;
+  const idx=parseInt(card.dataset.appIndex);
+  const a=apporteurs[idx];
+  if(!a)return;
+  openAppForm(a.id);
 }
 
 function renderSidebar(){
@@ -836,6 +848,13 @@ function getFiltered(){
 // ══════════════════════════════════════════
 // PANEL
 // ══════════════════════════════════════════
+function openPanelFromRow(el){
+  // Remonte jusqu'à l'élément portant data-dos-id si on clique un enfant
+  const card=el.closest('[data-dos-id]');
+  if(!card)return;
+  openPanel(card.dataset.dosId);
+}
+
 function openPanel(id){
   panelId=id;const r=dossiers.find(d=>String(d.id).trim()===String(id).trim());
   $('panel-title').textContent=r.client+' — '+r.formation;
