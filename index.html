@@ -504,6 +504,7 @@ const API_URL = 'https://script.google.com/macros/s/AKfycbwh3Zw-nrugVK3SKGVoMWjx
 // Données en cache local (Sheets est la source de vérité)
 let dossiers = lsGet('formacrm_dossiers', []);
 let apporteurs = lsGet('formacrm_apporteurs', []);
+let pendingPush = lsGet('formacrm_pending', []); // modifications en attente de sync
 let nextId=1000,panelId=null,editId=null,editAppId=null;
 let isSyncing=false;
 
@@ -539,13 +540,49 @@ async function syncFromSheets(){
   setSyncing(true);
   showSyncStatus('Synchronisation…','#378ADD');
   try{
+    // 1. Repousser d'abord les modifications en attente
+    if(pendingPush.length>0){
+      showSyncStatus('Envoi des modifications en attente…','#378ADD');
+      const toRetry=[...pendingPush];
+      for(const p of toRetry){
+        const d=dossiers.find(x=>String(x.id)===String(p.id));
+        if(d){
+          const res=await apiCall({method:'POST',body:{action:'upsertDossier',data:d}});
+          if(res?.ok){
+            pendingPush=pendingPush.filter(x=>String(x.id)!==String(p.id));
+            lsSet('formacrm_pending',pendingPush);
+          }
+        }
+      }
+    }
+
+    // 2. Récupérer les données depuis Sheets
     const [dos,apps]=await Promise.all([
       apiCall({method:'GET',query:{action:'getDossiers'}}),
       apiCall({method:'GET',query:{action:'getApporteurs'}}),
     ]);
-    if(dos){dossiers=dos;lsSet('formacrm_dossiers',dossiers);}
+
+    // 3. Merger : garder la version locale si elle est plus récente
+    if(dos){
+      const merged=dos.map(sheetsDoc=>{
+        const local=dossiers.find(l=>String(l.id)===String(sheetsDoc.id));
+        if(!local) return sheetsDoc;
+        // Comparer updatedAt — garder le plus récent
+        const sheetsTs=new Date(sheetsDoc.updatedAt||0).getTime();
+        const localTs=new Date(local.updatedAt||0).getTime();
+        return localTs>sheetsTs ? local : sheetsDoc;
+      });
+      // Ajouter les dossiers locaux pas encore dans Sheets (pending)
+      dossiers.forEach(l=>{
+        if(!merged.find(m=>String(m.id)===String(l.id))) merged.push(l);
+      });
+      dossiers=merged;
+      lsSet('formacrm_dossiers',dossiers);
+    }
     if(apps){apporteurs=apps;lsSet('formacrm_apporteurs',apporteurs);}
-    showSyncStatus('✓ Synchronisé avec Google Sheets','#3B6D11');
+
+    const nb=pendingPush.length;
+    showSyncStatus(nb>0?`⚠ ${nb} modif(s) en attente`:'✓ Synchronisé avec Google Sheets', nb>0?'#BA7517':'#3B6D11');
     updateSheetIndicator();
     renderAll();
     if($('view-dashboard').classList.contains('active'))setTimeout(renderCharts,80);
@@ -555,8 +592,20 @@ async function syncFromSheets(){
 }
 
 async function pushDossier(d){
+  // Marquer comme en attente avant l'envoi
+  pendingPush=pendingPush.filter(p=>String(p.id)!==String(d.id));
+  pendingPush.push({id:d.id, ts:Date.now()});
+  lsSet('formacrm_pending',pendingPush);
+
   const res=await apiCall({method:'POST',body:{action:'upsertDossier',data:d}});
-  if(res?.ok)showSyncStatus('✓ Sauvegardé dans Google Sheets','#3B6D11');
+  if(res?.ok){
+    // Confirmer — retirer de la file d'attente
+    pendingPush=pendingPush.filter(p=>String(p.id)!==String(d.id));
+    lsSet('formacrm_pending',pendingPush);
+    showSyncStatus('✓ Sauvegardé dans Google Sheets','#3B6D11');
+  } else {
+    showSyncStatus('⚠ Erreur — sera retenté à la prochaine sync','#E24B4A');
+  }
   return res;
 }
 
