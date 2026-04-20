@@ -516,20 +516,26 @@ async function apiCall(params){
   try{
     let res;
     if(params.method==='POST'){
+      // Apps Script exige no-cors ou text/plain pour éviter preflight CORS
       res=await fetch(API_URL,{
         method:'POST',
         body:JSON.stringify(params.body),
-        headers:{'Content-Type':'text/plain'}, // Apps Script nécessite text/plain pour éviter CORS preflight
+        headers:{'Content-Type':'text/plain'},
       });
     }else{
       const qs=new URLSearchParams(params.query).toString();
-      res=await fetch(`${API_URL}?${qs}`);
+      res=await fetch(`${API_URL}?${qs}`,{cache:'no-store'});
     }
-    const data=await res.json();
+    // Lire le texte brut d'abord pour déboguer les réponses non-JSON
+    const text=await res.text();
+    let data;
+    try{ data=JSON.parse(text); }
+    catch(e){ throw new Error('Réponse non-JSON : '+text.slice(0,120)); }
     if(data.error)throw new Error(data.error);
     return data;
   }catch(e){
-    showSyncStatus('Erreur : '+e.message,'#E24B4A');
+    console.error('apiCall error:',e);
+    showSyncStatus('⚠ Erreur Sheets : '+e.message.slice(0,60),'#E24B4A');
     return null;
   }finally{
     setSyncing(false);
@@ -922,10 +928,11 @@ function closePanel(){$('panelBg').classList.remove('open');panelId=null;}
 function editFromPanel(){if(panelId!=null){closePanel();openForm(panelId);}}
 
 function renderPanelBody(){
-  const r=dossiers.find(d=>String(d.id).trim()===String(panelId).trim());if(!r)return;
+  const r=dossiers.find(d=>String(d.id).trim()===String(panelId).trim());
+  if(!r)return;
   const curIdx=getEI(r.etape);
   const ck='<svg viewBox="0 0 10 10" style="width:9px;height:9px"><polyline points="2,5 4.5,8 8.5,2" stroke="white" stroke-width="2" fill="none" stroke-linecap="round" stroke-linejoin="round"/></svg>';
-  let html='<div>';
+  let html='<div id="wf-steps">';
   ETAPES.forEach((e,idx)=>{
     const isDone=idx<curIdx,isActive=idx===curIdx,isFuture=idx>curIdx;
     const vals=parseChecks(r.checks[e.id]||'');
@@ -945,15 +952,16 @@ function renderPanelBody(){
       html+=`<div class="checklist">`;
       e.checks.forEach((label,ci2)=>{
         const checked=vals[ci2]||false;
-        html+=`<div class="ci${checked?' ck':''}" onclick="toggleCheck('${r.id}','${e.id}',${ci2})"><div class="cbox">${checked?ck:''}</div><span class="ci-label">${label}</span></div>`;
+        // data-etape et data-ci — pas d'ID dans le onclick
+        html+=`<div class="ci${checked?' ck':''}" data-etape="${e.id}" data-ci="${ci2}"><div class="cbox">${checked?ck:''}</div><span class="ci-label">${label}</span></div>`;
       });
       html+=`</div>`;
     }
     if(isFuture&&e.checks.length)html+=`<div style="font-size:11px;color:var(--text2)">${e.checks.length} document(s) à compléter</div>`;
     if(isActive){
       html+=`<div class="step-actions">`;
-      if(idx<ETAPES.length-1)html+=`<button class="btn-p btn-sm" onclick="advanceEtape('${r.id}')">→ Passer à « ${ETAPES[idx+1].label} »</button>`;
-      if(idx>0)html+=`<button class="btn-o btn-sm" onclick="regressEtape('${r.id}')">← Retour</button>`;
+      if(idx<ETAPES.length-1)html+=`<button class="btn-p btn-sm" data-action="advance">→ Passer à « ${ETAPES[idx+1].label} »</button>`;
+      if(idx>0)html+=`<button class="btn-o btn-sm" data-action="regress">← Retour</button>`;
       html+=`</div>`;
     }
     html+=`</div></div>`;
@@ -965,16 +973,33 @@ function renderPanelBody(){
     <div class="iitem"><div class="ik">SIRET</div><div class="iv">${r.siret||'—'}</div></div>
     <div class="iitem"><div class="ik">Budget / Fin.</div><div class="iv">${fmtM(r.budget)}</div><div style="font-size:11px;color:var(--text2)">${r.finmode}${r.finmnt?' — '+fmtM(r.finmnt)+' pris en charge':''}</div></div>
   </div>`;
-  const comments=JSON.parse(r.comments||'[]');
   html+=`<div class="comments-area">
     <div style="font-size:12px;font-weight:500;margin-bottom:8px">Notes & historique</div>
     <div id="cmt-list">${renderComments(r)}</div>
     <div class="cinput">
-      <input type="text" id="new-cmt" placeholder="Ajouter une note…" onkeydown="if(event.key==='Enter')postComment('${r.id}')">
-      <button class="btn-p btn-sm" onclick="postComment('${r.id}')">Envoyer</button>
+      <input type="text" id="new-cmt" placeholder="Ajouter une note…">
+      <button class="btn-p btn-sm" id="btn-send-cmt">Envoyer</button>
     </div>
   </div>`;
   $('panel-body').innerHTML=html;
+
+  // ── Event delegation — aucun ID dans le HTML ──────────────────
+  // Checklists
+  $('panel-body').querySelectorAll('.ci[data-etape]').forEach(el=>{
+    el.addEventListener('click',()=>{
+      toggleCheck(panelId, el.dataset.etape, parseInt(el.dataset.ci));
+    });
+  });
+  // Boutons avance/retour
+  const advBtn=$('panel-body').querySelector('[data-action="advance"]');
+  const regBtn=$('panel-body').querySelector('[data-action="regress"]');
+  if(advBtn) advBtn.addEventListener('click',()=>advanceEtape(panelId));
+  if(regBtn) regBtn.addEventListener('click',()=>regressEtape(panelId));
+  // Commentaire
+  const sendBtn=$('btn-send-cmt');
+  const cInput=$('new-cmt');
+  if(sendBtn) sendBtn.addEventListener('click',()=>postComment(panelId));
+  if(cInput) cInput.addEventListener('keydown',ev=>{if(ev.key==='Enter')postComment(panelId);});
 }
 
 function renderComments(r){
@@ -984,27 +1009,50 @@ function renderComments(r){
 }
 
 async function toggleCheck(dosId,etapeId,ci){
-  const r=dossiers.find(d=>String(d.id)===String(dosId));
+  console.log('toggleCheck',dosId,etapeId,ci);
+  const r=dossiers.find(d=>String(d.id).trim()===String(dosId).trim());
+  if(!r){console.error('Dossier introuvable:',dosId);return;}
   const e=ETAPES.find(x=>x.id===etapeId);
+  if(!e){console.error('Étape introuvable:',etapeId);return;}
   const vals=parseChecks(r.checks[etapeId]||'');
   while(vals.length<e.checks.length)vals.push(false);
   vals[ci]=!vals[ci];
   r.checks[etapeId]=serializeChecks(vals);
   r.updatedAt=new Date().toISOString();
-  lsSet('formacrm_dossiers',dossiers);
+  lsSet('formacrm_dossiers',dossiers); // sauvegarde locale immédiate
   renderPanelBody();renderAll();
-  await pushDossier(r);
+  console.log('Pushing dossier to Sheets...',r.id);
+  const res=await pushDossier(r);
+  console.log('Push result:',res);
 }
 
 async function advanceEtape(id){
-  const r=dossiers.find(d=>String(d.id)===String(id));
+  console.log('advanceEtape',id);
+  const r=dossiers.find(d=>String(d.id).trim()===String(id).trim());
+  if(!r){console.error('Dossier introuvable:',id);return;}
   const i=getEI(r.etape);
-  if(i<ETAPES.length-1){r.etape=ETAPES[i+1].id;r.updatedAt=new Date().toISOString();lsSet('formacrm_dossiers',dossiers);renderPanelBody();renderAll();await pushDossier(r);}
+  if(i<ETAPES.length-1){
+    r.etape=ETAPES[i+1].id;
+    r.updatedAt=new Date().toISOString();
+    lsSet('formacrm_dossiers',dossiers);
+    renderPanelBody();renderAll();
+    const res=await pushDossier(r);
+    console.log('advanceEtape push:',res);
+  }
 }
 async function regressEtape(id){
-  const r=dossiers.find(d=>String(d.id)===String(id));
+  console.log('regressEtape',id);
+  const r=dossiers.find(d=>String(d.id).trim()===String(id).trim());
+  if(!r){console.error('Dossier introuvable:',id);return;}
   const i=getEI(r.etape);
-  if(i>0){r.etape=ETAPES[i-1].id;r.updatedAt=new Date().toISOString();lsSet('formacrm_dossiers',dossiers);renderPanelBody();renderAll();await pushDossier(r);}
+  if(i>0){
+    r.etape=ETAPES[i-1].id;
+    r.updatedAt=new Date().toISOString();
+    lsSet('formacrm_dossiers',dossiers);
+    renderPanelBody();renderAll();
+    const res=await pushDossier(r);
+    console.log('regressEtape push:',res);
+  }
 }
 
 async function postComment(id){
