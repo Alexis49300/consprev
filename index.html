@@ -982,24 +982,7 @@ function renderPanelBody(){
     </div>
   </div>`;
   $('panel-body').innerHTML=html;
-
-  // ── Event delegation — aucun ID dans le HTML ──────────────────
-  // Checklists
-  $('panel-body').querySelectorAll('.ci[data-etape]').forEach(el=>{
-    el.addEventListener('click',()=>{
-      toggleCheck(panelId, el.dataset.etape, parseInt(el.dataset.ci));
-    });
-  });
-  // Boutons avance/retour
-  const advBtn=$('panel-body').querySelector('[data-action="advance"]');
-  const regBtn=$('panel-body').querySelector('[data-action="regress"]');
-  if(advBtn) advBtn.addEventListener('click',()=>advanceEtape(panelId));
-  if(regBtn) regBtn.addEventListener('click',()=>regressEtape(panelId));
-  // Commentaire
-  const sendBtn=$('btn-send-cmt');
-  const cInput=$('new-cmt');
-  if(sendBtn) sendBtn.addEventListener('click',()=>postComment(panelId));
-  if(cInput) cInput.addEventListener('keydown',ev=>{if(ev.key==='Enter')postComment(panelId);});
+  // Les listeners sont gérés par délégation sur panel-body (initPanelListeners)
 }
 
 function renderComments(r){
@@ -1204,6 +1187,31 @@ function exportCSV(){
 // ══════════════════════════════════════════
 // INIT
 // ══════════════════════════════════════════
+// ── Listener unique sur panel-body — attaché une seule fois ──────
+function initPanelListeners(){
+  const body = $('panel-body');
+  body.addEventListener('click', function(ev){
+    // Checklist
+    const ci = ev.target.closest('.ci[data-etape]');
+    if(ci){
+      toggleCheck(panelId, ci.dataset.etape, parseInt(ci.dataset.ci));
+      return;
+    }
+    // Avancer étape
+    const adv = ev.target.closest('[data-action="advance"]');
+    if(adv){ advanceEtape(panelId); return; }
+    // Reculer étape
+    const reg = ev.target.closest('[data-action="regress"]');
+    if(reg){ regressEtape(panelId); return; }
+    // Envoyer commentaire
+    const send = ev.target.closest('#btn-send-cmt');
+    if(send){ postComment(panelId); return; }
+  });
+  body.addEventListener('keydown', function(ev){
+    if(ev.key==='Enter' && ev.target.id==='new-cmt') postComment(panelId);
+  });
+}
+
 async function init(){
   $('loading-overlay').classList.remove('hidden');
   // Vider le cache local des démos si c'est le premier lancement
@@ -1212,6 +1220,7 @@ async function init(){
     localStorage.removeItem('formacrm_apporteurs');
     localStorage.setItem('formacrm_initialized','1');
   }
+  initPanelListeners(); // listener unique — une seule fois
   updateSheetIndicator();
   await syncFromSheets();
   $('loading-overlay').classList.add('hidden');
