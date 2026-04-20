@@ -852,12 +852,13 @@ function renderApporteurs(){
 }
 
 function openAppFormByIndex(el){
-  // Remonte jusqu'à la carte si on a cliqué un enfant
   const card=el.closest('[data-app-index]');
-  if(!card)return;
-  const idx=parseInt(card.dataset.appIndex);
+  if(!card){console.error('openAppFormByIndex: pas de card',el);return;}
+  const idx=parseInt(card.getAttribute('data-app-index'));
+  console.log('openAppFormByIndex idx=',idx,'apporteurs.length=',apporteurs.length);
   const a=apporteurs[idx];
-  if(!a)return;
+  if(!a){console.error('apporteur['+idx+'] introuvable');return;}
+  console.log('openAppForm →',a.nom,'id=',a.id);
   openAppForm(a.id);
 }
 
@@ -904,14 +905,18 @@ function getFiltered(){
 // PANEL
 // ══════════════════════════════════════════
 function openPanelFromRow(el){
-  // Remonte jusqu'à l'élément portant data-dos-id si on clique un enfant
   const card=el.closest('[data-dos-id]');
-  if(!card)return;
-  openPanel(card.dataset.dosId);
+  if(!card){console.error('openPanelFromRow: pas de card trouvée',el);return;}
+  const id=card.getAttribute('data-dos-id'); // getAttribute plus fiable que dataset
+  console.log('openPanelFromRow → id=',JSON.stringify(id));
+  openPanel(id);
 }
 
 function openPanel(id){
-  panelId=id;const r=dossiers.find(d=>String(d.id).trim()===String(id).trim());
+  console.log('openPanel appelé avec id=',JSON.stringify(id),
+    '| dossiers ids=',dossiers.map(d=>d.id));
+  panelId=id;
+  const r=dossiers.find(d=>String(d.id).trim()===String(id).trim());
   $('panel-title').textContent=r.client+' — '+r.formation;
   const app=r.appId?apporteurs.find(a=>a.id===r.appId):null;
   $('panel-meta').innerHTML=`
@@ -928,8 +933,10 @@ function closePanel(){$('panelBg').classList.remove('open');panelId=null;}
 function editFromPanel(){if(panelId!=null){closePanel();openForm(panelId);}}
 
 function renderPanelBody(){
+  console.log('renderPanelBody: panelId=',JSON.stringify(panelId));
   const r=dossiers.find(d=>String(d.id).trim()===String(panelId).trim());
-  if(!r)return;
+  if(!r){console.error('renderPanelBody: dossier introuvable pour panelId=',panelId);return;}
+  console.log('renderPanelBody: affiche',r.client,r.formation);
   const curIdx=getEI(r.etape);
   const ck='<svg viewBox="0 0 10 10" style="width:9px;height:9px"><polyline points="2,5 4.5,8 8.5,2" stroke="white" stroke-width="2" fill="none" stroke-linecap="round" stroke-linejoin="round"/></svg>';
   let html='<div id="wf-steps">';
